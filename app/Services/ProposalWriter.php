@@ -44,10 +44,13 @@ class ProposalWriter
      */
     public function analyse(array $project): array
     {
-        $data = config('freelance.provider') === 'anthropic'
-            ? $this->analyseWithClaude($project)
+        return config('freelance.provider') === 'anthropic'
+            ? $this->assertComplete($this->analyseWithClaude($project))
             : $this->analyseWithZai($project);
+    }
 
+    private function assertComplete(array $data): array
+    {
         foreach (self::SCHEMA['required'] as $key) {
             if (! array_key_exists($key, $data)) {
                 throw new RuntimeException("Model response is missing \"{$key}\"");
@@ -101,7 +104,7 @@ class ProposalWriter
                 .', '.json_last_error_msg().'): '.mb_substr($content, 0, 200));
         }
 
-        return $data;
+        return $this->assertComplete($data);
     }
 
     private function jsonInstructions(): string
