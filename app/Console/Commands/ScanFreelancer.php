@@ -8,6 +8,7 @@ use App\Services\ProjectFilter;
 use App\Services\ProposalWriter;
 use App\Services\TelegramNotifier;
 use Illuminate\Console\Command;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -128,6 +129,13 @@ class ScanFreelancer extends Command
             $project->update(['status' => 'sent', 'sent_at' => now()]);
             $this->line("  sent (score {$project->score})");
         } catch (Throwable $e) {
+            // The free GLM tier is often overloaded (429); keep retrying until the project expires.
+            if ($e instanceof RequestException && $e->response->status() === 429) {
+                $this->warn('  AI service busy, will retry next scan');
+
+                return;
+            }
+
             $attempts = $project->attempts + 1;
             $project->update(['attempts' => $attempts, 'status' => $attempts >= 3 ? 'failed' : 'pending']);
             Log::error('Failed to process Freelancer project', ['id' => $project->freelancer_id, 'error' => $e->getMessage()]);
