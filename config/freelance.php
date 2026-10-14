@@ -63,9 +63,15 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Claude
+    | AI provider: "zai" (free GLM-4.7-Flash) or "anthropic" (Claude)
     |--------------------------------------------------------------------------
     */
+
+    'provider' => env('FREELANCE_PROVIDER', 'zai'),
+
+    'zai_url' => env('ZAI_API_URL', 'https://api.z.ai/api/paas/v4'),
+    'zai_key' => env('ZAI_API_KEY'),
+    'zai_model' => env('ZAI_MODEL', 'glm-4.7-flash'),
 
     'anthropic_key' => env('ANTHROPIC_API_KEY'),
     'model' => env('FREELANCE_MODEL', 'claude-opus-5-5'),

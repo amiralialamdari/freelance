@@ -32,7 +32,9 @@ Fill in `.env`:
 
 | Key | Where to get it |
 |---|---|
-| `ANTHROPIC_API_KEY` | platform.claude.com → API keys |
+| `FREELANCE_PROVIDER` | `zai` (free GLM-4.7-Flash, default) or `anthropic` (Claude, better proposals, paid) |
+| `ZAI_API_KEY` | z.ai → API keys (for `zai`) |
+| `ANTHROPIC_API_KEY` | platform.claude.com → API keys (for `anthropic`) |
 | `TELEGRAM_BOT_TOKEN` | Telegram → @BotFather → `/newbot` |
 | `TELEGRAM_CHAT_ID` | Send `/start` to your bot, then run `php artisan telegram:chat-id` |
 | `FREELANCER_TOKEN` (optional) | accounts.freelancer.com/settings/develop → personal access token |

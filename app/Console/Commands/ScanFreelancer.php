@@ -17,14 +17,16 @@ class ScanFreelancer extends Command
         {--dry : Analyse but print to the console instead of sending to Telegram}
         {--seed=3 : On the very first run, only analyse this many of the newest projects}';
 
-    protected $description = 'Fetch new Freelancer.com projects, analyse them with Claude and send them to Telegram';
+    protected $description = 'Fetch new Freelancer.com projects, analyse them with AI and send them to Telegram';
 
     public function handle(FreelancerApi $api, ProjectFilter $filter, ProposalWriter $writer, TelegramNotifier $telegram): int
     {
         $dry = (bool) $this->option('dry');
 
-        if (! config('freelance.anthropic_key') || (! $dry && (! config('freelance.telegram_token') || ! config('freelance.telegram_chat_id')))) {
-            $this->error('Set ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env first.');
+        $aiKey = config('freelance.provider') === 'anthropic' ? config('freelance.anthropic_key') : config('freelance.zai_key');
+
+        if (! $aiKey || (! $dry && (! config('freelance.telegram_token') || ! config('freelance.telegram_chat_id')))) {
+            $this->error('Set the AI key (ZAI_API_KEY or ANTHROPIC_API_KEY), TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env first.');
 
             return self::FAILURE;
         }

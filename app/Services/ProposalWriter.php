@@ -4,6 +4,8 @@ namespace App\Services;
 
 use Anthropic\Client;
 use GuzzleHttp\Client as Guzzle;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 class ProposalWriter
@@ -35,20 +37,6 @@ class ProposalWriter
         'additionalProperties' => false,
     ];
 
-    private Client $client;
-
-    public function __construct()
-    {
-        $this->client = new Client(
-            apiKey: config('freelance.anthropic_key'),
-            requestOptions: [
-                // IPv6 routing on this server is broken; force IPv4.
-                'transporter' => new Guzzle(['force_ip_resolve' => 'v4', 'timeout' => 600]),
-                'maxRetries' => 3,
-            ],
-        );
-    }
-
     /**
      * Analyse a normalised project and return the decoded analysis.
      *
@@ -56,7 +44,84 @@ class ProposalWriter
      */
     public function analyse(array $project): array
     {
-        $message = $this->client->beta->messages->create(
+        $data = config('freelance.provider') === 'anthropic'
+            ? $this->analyseWithClaude($project)
+            : $this->analyseWithZai($project);
+
+        foreach (self::SCHEMA['required'] as $key) {
+            if (! array_key_exists($key, $data)) {
+                throw new RuntimeException("Model response is missing \"{$key}\"");
+            }
+        }
+
+        return $data;
+    }
+
+    /**
+     * Z.ai GLM (OpenAI-compatible chat completions, JSON mode).
+     */
+    private function analyseWithZai(array $project): array
+    {
+        // The small GLM model occasionally returns malformed JSON; one retry usually fixes it.
+        try {
+            return $this->requestZai($project);
+        } catch (RuntimeException) {
+            return $this->requestZai($project);
+        }
+    }
+
+    private function requestZai(array $project): array
+    {
+        $response = Http::baseUrl(config('freelance.zai_url'))
+            ->withToken(config('freelance.zai_key'))
+            ->timeout(300)
+            ->retry(3, 5000, fn ($e) => ! $e instanceof RequestException || $e->response->status() === 429 || $e->response->serverError())
+            // IPv6 routing on this server is broken; force IPv4.
+            ->withOptions(['force_ip_resolve' => 'v4'])
+            ->post('/chat/completions', [
+                'model' => config('freelance.zai_model'),
+                'messages' => [
+                    ['role' => 'system', 'content' => $this->systemPrompt()."\n\n".$this->jsonInstructions()],
+                    ['role' => 'user', 'content' => $this->projectPrompt($project)],
+                ],
+                'response_format' => ['type' => 'json_object'],
+                'thinking' => ['type' => 'enabled'],
+                'max_tokens' => 16000,
+            ])
+            ->throw();
+
+        $content = (string) $response->json('choices.0.message.content', '');
+        // Tolerate fences or stray text around the object.
+        $start = strpos($content, '{');
+        $end = strrpos($content, '}');
+        $data = $start !== false && $end > $start ? json_decode(substr($content, $start, $end - $start + 1), true) : null;
+
+        if (! is_array($data)) {
+            throw new RuntimeException('GLM returned invalid JSON (finish reason: '.$response->json('choices.0.finish_reason')
+                .', '.json_last_error_msg().'): '.mb_substr($content, 0, 200));
+        }
+
+        return $data;
+    }
+
+    private function jsonInstructions(): string
+    {
+        return "## Output format\nReply with ONLY one JSON object, no other text, matching this JSON Schema exactly:\n"
+            .json_encode(self::SCHEMA, JSON_UNESCAPED_SLASHES);
+    }
+
+    private function analyseWithClaude(array $project): array
+    {
+        $client = new Client(
+            apiKey: config('freelance.anthropic_key'),
+            requestOptions: [
+                // IPv6 routing on this server is broken; force IPv4.
+                'transporter' => new Guzzle(['force_ip_resolve' => 'v4', 'timeout' => 600]),
+                'maxRetries' => 3,
+            ],
+        );
+
+        $message = $client->beta->messages->create(
             model: config('freelance.model'),
             maxTokens: 16000,
             system: [
