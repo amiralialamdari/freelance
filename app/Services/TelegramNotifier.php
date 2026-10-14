@@ -18,7 +18,9 @@ class TelegramNotifier
         $a = $project->analysis;
 
         $this->send($this->overview($p, $a), $this->linkButton($p['url']));
-        $this->send("📝 <b>پروپوزال انگلیسی</b> (برای کپی روی متن بزن):\n\n<pre>".$this->e($a['proposal_en']).'</pre>');
+        $length = mb_strlen($a['proposal_en']);
+        $lengthNote = $length > 1500 ? "⚠️ {$length}/1500 کاراکتر — باید کوتاه‌ش کنی" : "{$length}/1500 کاراکتر";
+        $this->send("📝 <b>پروپوزال انگلیسی</b> ({$lengthNote}، برای کپی روی متن بزن):\n\n<pre>".$this->e($a['proposal_en']).'</pre>');
         $this->send("🇮🇷 <b>ترجمه‌ی پروپوزال</b>\n\n".$this->e($a['proposal_fa']));
     }
 

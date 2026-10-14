@@ -65,12 +65,37 @@ class ProposalWriter
      */
     private function analyseWithZai(array $project): array
     {
-        // The small GLM model occasionally returns malformed JSON; one retry usually fixes it.
-        try {
-            return $this->requestZai($project);
-        } catch (RuntimeException) {
-            return $this->requestZai($project);
+        // The small GLM model sometimes returns malformed JSON or ignores the proposal
+        // structure; retry a few times and fall back to the last usable answer.
+        $usable = null;
+        $error = null;
+
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            try {
+                $data = $this->requestZai($project);
+            } catch (RuntimeException $e) {
+                $error = $e;
+
+                continue;
+            }
+
+            if (! $data['relevant'] || $this->proposalLooksRight($data['proposal_en'])) {
+                return $data;
+            }
+
+            $usable = $data;
         }
+
+        return $usable ?? throw $error;
+    }
+
+    private function proposalLooksRight(string $proposal): bool
+    {
+        $length = mb_strlen($proposal);
+
+        return $length >= 750 && $length <= 1500
+            && substr_count($proposal, "\n") >= 4
+            && str_contains($proposal, config('freelance.profile.name'));
     }
 
     private function requestZai(array $project): array
@@ -202,16 +227,24 @@ class ProposalWriter
         ## 5. The proposal (`proposal_en`)
         This is what wins or loses the job. The client sees only the first two lines in the bid list, and reads dozens of bids, most of them generic.
 
+        Clients often hide a test in the post ("start your bid with the word X", "answer: which framework would you use?", "mention your favourite color"). Find it and obey it exactly; it overrides the structure below (e.g. put the required word first, before "Hi,"). Bids that miss it are rejected unread.
+
         Structure:
         1. Open with "Hi," then one or two sentences that show you understood their specific problem, naming concrete details from their post. No self-introduction in the opening.
-        2. Briefly explain what the job actually needs technically: the approach, the key pieces, any pitfall you'd handle. This is where expertise shows.
-        3. A short plan of 3-4 numbered steps, one line each.
+        2. The technical core, 3-5 sentences. This is what makes the client trust him over cheaper bids, so be specific to THIS project:
+           - Name the concrete stack/tools you'd use and why they fit (e.g. "Laravel queues with Redis for the import so the page never times out", not "modern technologies").
+           - Point out at least one real pitfall or edge case in their requirements that a less experienced developer would miss, and say how you'd handle it (data validation, rate limits, auth/security, payment webhooks, race conditions, mobile responsiveness, power/connectivity for IoT, prompt/costs for AI, etc.).
+           - Mention how you'd make it solid: tests on the critical parts, clean structure they can maintain, deployment/handover (repo, docs, env setup).
+           - Only use details that follow from the post. If key facts are missing, state a sensible assumption briefly ("assuming you're on shared hosting, I'd...").
+           Bad (generic): "I will build a high-quality, scalable solution using best practices."
+           Good (specific): "Since the prices come from a supplier CSV that changes daily, I'd import it with a scheduled Laravel job and validate each row, so one bad line doesn't break the whole catalogue."
+        3. A short plan of 3-4 numbered steps, one line each, each step a concrete technical deliverable (not "analysis", "testing" alone).
         4. Timeline in days, matching `delivery_days`, plus a reasonable support offer sized to the project (for example a couple of weeks of free bug fixes after delivery for small jobs, around 30 days for larger ones).
         5. Mention his 10+ years once, naturally, and that similar work is in the portfolio on his profile. If relevant, mention he's in Canada, which suits North American clients' hours.
         6. Ask one or two sharp questions only when they'd genuinely change the approach or estimate; otherwise ask none.
         7. Sign off with "Best,\n{$p['name']}".
 
-        Length: medium, about 120-200 words and never above 1,400 characters (Freelancer caps bid text at 1,500). Short paragraphs, easy to skim.
+        Length: about 170-230 words and never above 1,450 characters (Freelancer caps bid text at 1,500). Spend the words on the technical core, not on introductions. Short paragraphs, easy to skim; technical but readable for a non-technical client (explain jargon in a few words when needed).
 
         It must read as written by an experienced human developer, not by AI:
         - Plain, confident, conversational English with contractions. Vary sentence length.
